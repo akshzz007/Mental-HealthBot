@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Air Drawing with Eraser & Save</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      background: radial-gradient(circle, #111, #000);
+      font-family: 'Segoe UI', sans-serif;
+    }
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    video, #overlayCanvas {
+      transform: scaleX(-1);
+    }
+    #controls {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      user-select: none;
+    }
+    button {
+      background: #1a1a1a;
+      color: white;
+      border: 2px solid white;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      box-shadow: 0 0 5px #0ff;
+      transition: transform 0.2s, box-shadow 0.3s;
+    }
+    button:hover {
+      transform: scale(1.08);
+      box-shadow: 0 0 12px #0ff;
+    }
+    .color-palette {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .color-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 2px solid white;
+      cursor: pointer;
+      box-shadow: 0 0 5px #fff;
+    }
+    .color-btn.selected {
+      box-shadow: 0 0 12px #0ff;
+      border-color: #0ff;
+    }
+  </style>
+</head>
+<body>
+  <video id="video" autoplay playsinline width="1280" height="720"></video>
+  <canvas id="drawingCanvas" width="1280" height="720"></canvas>
+  <canvas id="overlayCanvas" width="1280" height="720"></canvas>
+
+  <div id="controls">
+    <button onclick="clearCanvas()">🧹 Clear</button>
+    <button onclick="saveImage()">💾 Save</button>
+    <button onclick="activateEraser()">✏️ Eraser</button>
+    <div class="color-palette">
+      <div class="color-btn selected" style="background: yellow;" onclick="setColor('yellow', this)"></div>
+      <div class="color-btn" style="background: red;" onclick="setColor('red', this)"></div>
+      <div class="color-btn" style="background: blue;" onclick="setColor('blue', this)"></div>
+      <div class="color-btn" style="background: green;" onclick="setColor('green', this)"></div>
+      <div class="color-btn" style="background: white; border-color: black;" onclick="setColor('white', this)"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+  <script>
+    const video = document.getElementById('video');
+    const drawingCanvas = document.getElementById('drawingCanvas');
+    const overlayCanvas = document.getElementById('overlayCanvas');
+
+    const drawCtx = drawingCanvas.getContext('2d');
+    const overlayCtx = overlayCanvas.getContext('2d');
+
+    let prevX = null, prevY = null;
+    let selectedColor = 'yellow';
+    let currentColor = selectedColor;
+    let eraserMode = false;
+
+    function setColor(color, elem) {
+      eraserMode = false;
+      currentColor = color;
+      selectedColor = color;
+      document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('selected'));
+      if (elem) elem.classList.add('selected');
+    }
+
+    function activateEraser() {
+      eraserMode = true;
+      currentColor = 'white';
+      document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('selected'));
+    }
+
+    function clearCanvas() {
+      drawCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+    }
+
+    function saveImage() {
+      const link = document.createElement('a');
+      link.download = 'drawing.png';
+      link.href = drawingCanvas.toDataURL();
+      link.click();
+    }
+
+    function eraseAt(x, y) {
+      const eraseRadius = 30;
+      drawCtx.clearRect(x - eraseRadius, y - eraseRadius, eraseRadius * 2, eraseRadius * 2);
+    }
+
+    function drawLine(x, y) {
+      if (prevX !== null && prevY !== null) {
+        drawCtx.beginPath();
+        drawCtx.strokeStyle = currentColor;
+        drawCtx.lineWidth = eraserMode ? 60 : 5;
+        drawCtx.lineCap = 'round';
+        drawCtx.lineJoin = 'round';
+        drawCtx.globalAlpha = eraserMode ? 1.0 : 0.6;
+        drawCtx.shadowColor = eraserMode ? 'transparent' : currentColor;
+        drawCtx.shadowBlur = eraserMode ? 0 : 6;
+        drawCtx.moveTo(prevX, prevY);
+        drawCtx.lineTo(x, y);
+        drawCtx.stroke();
+        drawCtx.closePath();
+      }
+      prevX = x;
+      prevY = y;
+    }
+
+    function fingersUp(landmarks) {
+      let fingers = [];
+      fingers[0] = landmarks[4].x < landmarks[3].x ? 1 : 0;
+      fingers[1] = landmarks[8].y < landmarks[6].y ? 1 : 0;
+      fingers[2] = landmarks[12].y < landmarks[10].y ? 1 : 0;
+      fingers[3] = landmarks[16].y < landmarks[14].y ? 1 : 0;
+      fingers[4] = landmarks[20].y < landmarks[18].y ? 1 : 0;
+      return fingers;
+    }
+
+    const hands = new Hands({
+      locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7
+    });
+
+    hands.onResults(results => {
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        for (const landmarks of results.multiHandLandmarks) {
+          drawConnectors(overlayCtx, landmarks, HAND_CONNECTIONS, { color: '#0ff', lineWidth: 2 });
+          drawLandmarks(overlayCtx, landmarks, { color: '#fff', lineWidth: 1 });
+
+          const fingers = fingersUp(landmarks);
+          const indexTip = landmarks[8];
+
+          const x = drawingCanvas.width - (indexTip.x * drawingCanvas.width);
+          const y = indexTip.y * drawingCanvas.height;
+
+          // Only draw or erase when index finger is up and middle finger is down
+          if (fingers[1] === 1 && fingers[2] === 0) {
+            if (eraserMode) {
+              eraseAt(x, y);
+              prevX = null; prevY = null;
+            } else {
+              drawLine(x, y);
+            }
+          } else {
+            prevX = null;
+            prevY = null;
+          }
+        }
+      } else {
+        prevX = null;
+        prevY = null;
+      }
+    });
+
+    const camera = new Camera(video, {
+      onFrame: async () => {
+        await hands.send({ image: video });
+      },
+      width: 1280,
+      height: 720
+    });
+    camera.start();
+  </script>
+</body>
+</html>

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mental Health Bot</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(to right, #0f2027, #203a43, #2c5364);
+      color: white;
+      overflow: hidden;
+    }
+
+    header {
+      width: 100%;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 12px 0;
+      font-size: 28px;
+      font-weight: bold;
+      border-bottom: 2px solid white;
+      position: relative;
+      z-index: 10;
+    }
+
+    header::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 8px;
+      background: #ffcc00;
+      border-radius: 4px 0 0 4px;
+      pointer-events: none;
+    }
+
+    #webcam-container {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    canvas {
+      border-radius: 10px;
+      max-width: 100%;
+      height: auto;
+    }
+
+    #emotionText, #notify {
+      position: absolute;
+      width: 100%;
+      text-align: center;
+      font-size: 24px;
+      font-weight: bold;
+      z-index: 2;
+      text-shadow: 1px 1px 3px black;
+    }
+
+    #emotionText { top: 70%; }
+    #notify { top: 80%; color: #ffcc00; }
+
+    #chatbot-container {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 4;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    #dashboardBtn {
+      display: none;
+      position: fixed;
+      top: 60px;
+      left: 10px;
+      background: #ffffff20;
+      color: white;
+      border: 1px solid white;
+      border-radius: 6px;
+      padding: 8px 14px;
+      z-index: 11;
+      cursor: pointer;
+      box-shadow: 0 0 10px #ffcc00aa;
+      transition: background-color 0.3s ease;
+    }
+
+    #dashboardBtn:hover {
+      background: #ffcc00;
+      color: #000;
+    }
+
+    #dashboardMenu {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: linear-gradient(to bottom right, #000428, #004e92);
+      z-index: 2000;
+      transform: translateX(100%);
+      transition: transform 0.3s ease;
+      overflow: auto;
+    }
+
+    #dashboardMenu.open {
+      transform: translateX(0);
+    }
+
+    #dashboardMenu h2 {
+      margin: 20px;
+      font-size: 24px;
+      font-weight: bold;
+      border-bottom: 1px solid white;
+      padding-bottom: 8px;
+    }
+
+    #dashboardMenu button {
+      background: #ffffff20;
+      border: 1px solid white;
+      color: white;
+      padding: 10px 15px;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 10px;
+      transition: background-color 0.2s ease;
+    }
+
+    #dashboardMenu button:hover {
+      background: #ffcc00;
+      color: #000;
+    }
+
+    #gameContainer {
+      flex-grow: 1;
+      margin: 10px;
+      border: 1px solid white;
+      border-radius: 8px;
+      background: #111;
+      display: flex;
+    }
+
+    #gameIframe {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: none;
+      border: none;
+    }
+
+    #closeDashboard {
+      background: transparent;
+      border: none;
+      font-size: 30px;
+      color: white;
+      cursor: pointer;
+      padding: 10px;
+      float: right;
+    }
+  </style>
+</head>
+<body>
+
+  <header>Mental Health Bot</header>
+
+  <div id="webcam-container"></div>
+  <div id="emotionText">Detecting Emotion...</div>
+  <div id="notify"></div>
+
+  <button id="dashboardBtn">🎮 Dashboard</button>
+
+  <div id="chatbot-container">
+    <iframe id="chatbotFrame"
+      src="https://cdn.botpress.cloud/webchat/v2.4/shareable.html?configUrl=https://files.bpcontent.cloud/2025/05/13/11/20250513115504-VIRETJPF.json&clear=true"
+      aria-label="Chatbot Interface">
+    </iframe>
+  </div>
+
+  <div id="dashboardMenu" aria-hidden="true">
+    <button id="closeDashboard" aria-label="Close Dashboard">&times;</button>
+    <h2>Dashboard</h2>
+    <button id="openDrawing">🎨 Open Drawing Canvas</button>
+    <div id="gameContainer">
+      <iframe id="gameIframe" src="" aria-label="Drawing Game"></iframe>
+    </div>
+  </div>
+
+  <!-- TensorFlow and Teachable Machine -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.9.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.4/dist/teachablemachine-image.min.js"></script>
+
+  <script>
+    const URL = "./";
+    let model, webcam, maxPredictions;
+    let detected = false;
+
+    const emotionText = document.getElementById("emotionText");
+    const notify = document.getElementById("notify");
+    const chatbotContainer = document.getElementById("chatbot-container");
+    const dashboardBtn = document.getElementById("dashboardBtn");
+    const dashboardMenu = document.getElementById("dashboardMenu");
+    const closeDashboard = document.getElementById("closeDashboard");
+    const openDrawingBtn = document.getElementById("openDrawing");
+    const gameIframe = document.getElementById("gameIframe");
+    const chatbotFrame = document.getElementById("chatbotFrame");
+    const webcamContainer = document.getElementById("webcam-container");
+    const header = document.querySelector("header");
+
+    async function init() {
+      try {
+        const modelURL = URL + "model.json";
+        const metadataURL = URL + "metadata.json";
+
+        model = await tmImage.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
+
+        webcam = new tmImage.Webcam(350, 350, true);
+        await webcam.setup();
+        await webcam.play();
+        window.requestAnimationFrame(loop);
+
+        webcamContainer.appendChild(webcam.canvas);
+      } catch (err) {
+        emotionText.innerText = "Failed to load model. Check console.";
+        console.error("Model load error:", err);
+      }
+    }
+
+    async function loop() {
+      webcam.update();
+      await predict();
+      window.requestAnimationFrame(loop);
+    }
+
+    async function predict() {
+      const prediction = await model.predict(webcam.canvas);
+      let maxProb = 0, maxIndex = 0;
+
+      for (let i = 0; i < prediction.length; i++) {
+        if (prediction[i].probability > maxProb) {
+          maxProb = prediction[i].probability;
+          maxIndex = i;
+        }
+      }
+
+      const emotions = prediction.map(p => p.className);
+      const detectedEmotion = emotions[maxIndex];
+
+      emotionText.innerText = `Emotion Detected: ${detectedEmotion} (${(maxProb * 100).toFixed(0)}%)`;
+      notify.innerText = "Discuss your feelings with the bot.";
+
+      if (maxProb > 0.9 && !detected) {
+        detected = true;
+
+        setTimeout(() => {
+          webcam.stop();
+          webcamContainer.style.display = "none";
+          emotionText.style.display = "none";
+          notify.style.display = "none";
+          header.style.display = "none";
+
+          chatbotContainer.style.display = "block";
+          dashboardBtn.style.display = "block";
+        }, 2000);
+      }
+    }
+
+    dashboardBtn.onclick = () => {
+      dashboardMenu.classList.toggle("open");
+
+      if (dashboardMenu.classList.contains("open")) {
+        chatbotContainer.style.display = "none";
+        dashboardBtn.style.display = "none";
+      } else {
+        chatbotContainer.style.display = "block";
+        dashboardBtn.style.display = "block";
+        gameIframe.style.display = "none";
+        gameIframe.src = "";
+      }
+    };
+
+    closeDashboard.onclick = () => {
+      dashboardMenu.classList.remove("open");
+      chatbotContainer.style.display = "block";
+      dashboardBtn.style.display = "block";
+      gameIframe.style.display = "none";
+      gameIframe.src = "";
+    };
+
+    openDrawingBtn.onclick = () => {
+      gameIframe.style.display = "block";
+      gameIframe.src = "drawing-canva.html"; // Replace with your drawing game
+    };
+
+    window.onload = init;
+  </script>
+
+</body>
+</html> 
